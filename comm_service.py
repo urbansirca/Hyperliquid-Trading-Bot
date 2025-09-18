@@ -734,4 +734,31 @@ $open #for open positions```"""
                     msg = f"📊 **DEBUG MODE STATUS**\n"
                     msg += f"TV Service: {'✅ ON' if tv_debug else '❌ OFF'}\n"
                     msg += f"Candle Service: {'✅ ON' if candle_debug else '❌ OFF'}\n"
-                    msg += f"\nUse `$debug on`
+                    msg += f"\nUse `$debug on` or `$debug off` to toggle debug mode"
+
+                    await message.channel.send(msg)
+                except ImportError:
+                    await message.channel.send("❌ Debug modules not available")
+                return
+
+            if len(args) == 2:
+                mode = args[1].lower()
+                if mode in ["on", "off"]:
+                    try:
+                        # Toggle debug mode
+                        import tv_service
+                        import candle_service
+                        
+                        if mode == "on":
+                            tv_service.DEBUG_PERFORMANCE = True
+                            candle_service.DEBUG_PERFORMANCE = True
+                            await message.channel.send("✅ Debug mode enabled for all services")
+                        else:
+                            tv_service.DEBUG_PERFORMANCE = False
+                            candle_service.DEBUG_PERFORMANCE = False
+                            await message.channel.send("❌ Debug mode disabled for all services")
+                    except Exception as e:
+                        await message.channel.send(f"❌ Error toggling debug mode: {str(e)}")
+                else:
+                    await message.channel.send("❌ Usage: $debug [on/off]")
+                return
