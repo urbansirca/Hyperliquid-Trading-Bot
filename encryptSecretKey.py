@@ -44,6 +44,7 @@ def main():
     print("=" * 40)
 
     # Get secret key
+    # secret_key = os.environ.get("HYPERLIQUID_PASSWORD")
     secret_key = getpass.getpass("Enter your HyperLiquid secret key: ")
 
     # Get password for encryption

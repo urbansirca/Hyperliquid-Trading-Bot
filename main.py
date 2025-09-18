@@ -126,19 +126,9 @@ class ServiceContainer:
         # Initialize Screener Service
         print("🔧 Initializing Screener Service...")
         self.screener = Screener(
-            hyperliquidBot=self.hl_service,
-            error_logger=self.log_backend_error,
+            hl_service=self.hl_service,
         )
         print("✅ Screener Service initialized")
-
-        # Initialize Candle Close Stop Loss Manager
-        print("🔧 Initializing Candle Close Stop Loss Manager...")
-        self.candle_sl_manager = CandleCloseStopLossManager(
-            hl_service=self.hl_service,
-            tracker=self.tracker,
-            error_logger=self.log_backend_error,
-        )
-        print("✅ Candle Close Stop Loss Manager initialized")
 
         # Initialize TradingView Webhook Service
         print("🔧 Initializing TradingView Webhook Service...")
@@ -152,6 +142,16 @@ class ServiceContainer:
             error_logger=self.log_backend_error,
         )
         print("✅ TradingView Webhook Service initialized")
+
+        # Initialize Candle Close Stop Loss Manager
+        print("🔧 Initializing Candle Close Stop Loss Manager...")
+        self.candle_sl_manager = CandleCloseStopLossManager(
+            tv_service=self.tv_service,
+            hl_service=self.hl_service,
+            tracker=self.tracker,
+            error_logger=self.log_backend_error,
+        )
+        print("✅ Candle Close Stop Loss Manager initialized")
 
         # Set up cross-references
         self.comm_service.screener = self.screener
