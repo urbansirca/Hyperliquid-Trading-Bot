@@ -742,7 +742,7 @@ class TradingViewWebhookService:
                         # Calculate optimal close amount
                         close_amount, skip_tp2 = (
                             self.calculate_optimal_tp1_close_amount(
-                                original_qty, current_price, min_usd=10.0
+                                original_qty, current_price, min_usd=20.0
                             )
                         )
 
@@ -955,7 +955,7 @@ class TradingViewWebhookService:
         return stats
 
     def calculate_optimal_tp1_close_amount(
-        self, original_qty: float, current_price: float, min_usd: float = 10.0
+        self, original_qty: float, current_price: float, min_usd: float = 20.0
     ) -> tuple:
         """Calculate optimal close amount and whether to skip TP2"""
         remaining_after_50pct = (original_qty * 0.5) * current_price

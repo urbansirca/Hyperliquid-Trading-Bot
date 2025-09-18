@@ -762,3 +762,313 @@ $open #for open positions```"""
                 else:
                     await message.channel.send("❌ Usage: $debug [on/off]")
                 return
+
+    async def send_long_message(self, channel, content, code_block=True):
+        """Helper function to send long messages in chunks"""
+        max_length = 1900 if code_block else 1950
+        wrapper = "```\n{}\n```" if code_block else "{}"
+        
+        if len(content) <= max_length:
+            await channel.send(wrapper.format(content))
+        else:
+            chunks = [content[i:i + max_length] for i in range(0, len(content), max_length)]
+            for i, chunk in enumerate(chunks):
+                header = f"Part {i+1}/{len(chunks)}: " if len(chunks) > 1 else ""
+                await channel.send(wrapper.format(header + chunk))
+                await asyncio.sleep(0.1)  # Prevent rate limiting
+
+    def format_trade_info(self, trade):
+        """Format trade information for display"""
+        status_emoji = {
+            "active": "🟢",
+            "tp1_achieved": "🟡", 
+            "tp2_achieved": "🎯",
+            "fully_closed": "✅",
+            "stopped_out": "🔴",
+            "negated": "❌",
+            "manual_close": "🔧",
+            "cancelled": "⭕"
+        }
+        
+        emoji = status_emoji.get(trade["status"], "❓")
+        side_arrow = "📈" if trade["side"] == "long" else "📉"
+        
+        # Calculate current P&L if possible
+        pnl_info = ""
+        if self.hlbot and hasattr(self.hlbot, 'tracker'):
+            try:
+                current_price = self.hlbot.get_last_price(trade["currency"])
+                if current_price and hasattr(self.hlbot.tracker, 'calculate_current_pnl'):
+                    pnl_data = self.hlbot.tracker.calculate_current_pnl(trade["uuid"], current_price)
+                    if pnl_data:
+                        pnl_info = f"\nP&L: ${pnl_data['total_pnl_usd']} ({pnl_data['total_pnl_percentage']:.1f}%)"
+            except:
+                pass
+        
+        # Format timestamps
+        created = trade["created_at"][:19].replace("T", " ")
+        
+        tp_info = ""
+        if trade.get("tp1_achieved"):
+            tp_info += f"\nTP1: ✅ @{trade['tp1_price']}"
+        if trade.get("tp2_achieved"):
+            tp_info += f"\nTP2: ✅ @{trade['tp2_price']}"
+        
+        sl_type = "📊 Candle-Close" if trade.get("candle_close_sl_active") else "⚡ Traditional"
+        sl_tf = f" ({trade['candle_sl_timeframe']})" if trade.get("candle_sl_timeframe") else ""
+        
+        return f"""
+{emoji} {trade['currency']} {side_arrow} {trade['timeframe']} | {trade['status'].upper()}
+Entry: ${trade['entry_price']} | Size: ${trade['qty_usd']} | Qty: {trade['current_qty_asset']}
+SL: {sl_type}{sl_tf} @${trade['stop_loss_price']}
+Created: {created}{tp_info}{pnl_info}
+"""
+
+    async def handle_trades_command(self, message):
+        """$trades - Show active trades"""
+        if not self.hlbot or not hasattr(self.hlbot, 'tracker'):
+            await message.channel.send("❌ Trade tracker not available")
+            return
+            
+        active_trades = self.hlbot.tracker.get_active_trades()
+        
+        if not active_trades:
+            await message.channel.send("📊 No active trades")
+            return
+        
+        msg = f"📊 ACTIVE TRADES ({len(active_trades)})\n" + "="*40 + "\n"
+        
+        for trade in active_trades:
+            msg += self.format_trade_info(trade)
+            msg += "-" * 40 + "\n"
+        
+        # Add account summary
+        try:
+            acc_value = self.hlbot.get_totalAccValue()
+            msg += f"\n💰 Account Value: ${acc_value:,.2f}"
+        except:
+            pass
+            
+        await self.send_long_message(message.channel, msg)
+
+    async def handle_history_command(self, message):
+        """$history [limit] - Show trade history"""
+        if not self.hlbot or not hasattr(self.hlbot, 'tracker'):
+            await message.channel.send("❌ Trade tracker not available")
+            return
+        
+        args = message.content.split(" ")
+        limit = 10  # default
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+                limit = min(limit, 50)  # Max 50 trades
+            except ValueError:
+                await message.channel.send("❌ Invalid limit. Use: $history [number]")
+                return
+        
+        all_trades = list(self.hlbot.tracker.trades.values())
+        # Sort by created_at, most recent first
+        all_trades.sort(key=lambda x: x["created_at"], reverse=True)
+        recent_trades = all_trades[:limit]
+        
+        if not recent_trades:
+            await message.channel.send("📊 No trade history")
+            return
+        
+        msg = f"📈 TRADE HISTORY (Last {len(recent_trades)})\n" + "="*40 + "\n"
+        
+        for trade in recent_trades:
+            msg += self.format_trade_info(trade)
+            msg += "-" * 40 + "\n"
+            
+        await self.send_long_message(message.channel, msg)
+
+    async def handle_stats_command(self, message):
+        """$stats - Show trading performance statistics"""
+        if not self.hlbot or not hasattr(self.hlbot, 'tracker'):
+            await message.channel.send("❌ Trade tracker not available")
+            return
+        
+        summary = self.hlbot.tracker.get_trade_summary()
+        tf_performance = self.hlbot.tracker.get_performance_by_timeframe()
+        
+        msg = "📊 TRADING STATISTICS\n" + "="*40 + "\n"
+        msg += f"Total Trades: {summary['total_trades']}\n"
+        msg += f"Active Trades: {summary['active_trades']}\n" 
+        msg += f"Closed Trades: {summary['closed_trades']}\n"
+        msg += f"Win Rate: {summary['win_rate_percent']:.1f}%\n"
+        msg += f"TP1 Hit Rate: {summary['tp1_hit_rate_percent']:.1f}%\n"
+        msg += f"TP2 Hit Rate: {summary['tp2_hit_rate_percent']:.1f}%\n"
+        msg += f"Total P&L: ${summary['total_realized_pnl_usd']:.2f}\n\n"
+        
+        # Status breakdown
+        msg += "📋 STATUS BREAKDOWN:\n"
+        for status, count in summary['status_breakdown'].items():
+            emoji = {"active": "🟢", "tp1_achieved": "🟡", "tp2_achieved": "🎯", 
+                    "fully_closed": "✅", "stopped_out": "🔴", "negated": "❌"}.get(status, "❓")
+            msg += f"{emoji} {status}: {count}\n"
+        
+        # Timeframe performance
+        if tf_performance:
+            msg += "\n⏰ TIMEFRAME PERFORMANCE:\n"
+            for tf, stats in tf_performance.items():
+                msg += f"{tf}: {stats['total_trades']} trades, "
+                msg += f"{stats['win_rate_percent']:.1f}% win, "
+                msg += f"${stats['realized_pnl']:.2f} P&L\n"
+        
+        await self.send_long_message(message.channel, msg)
+
+    async def handle_pending_command(self, message):
+        """$pending - Show pending trades from TradingView service"""
+        try:
+            if not self.tv_service:
+                await message.channel.send("❌ TradingView service not available")
+                return
+                
+            with self.tv_service.pending_trades_lock:
+                pending_trades = list(self.tv_service.pending_trades.values())
+            
+            if not pending_trades:
+                await message.channel.send("📋 No pending trades")
+                return
+            
+            msg = f"⏳ PENDING TRADES ({len(pending_trades)})\n" + "="*40 + "\n"
+            
+            for trade in pending_trades:
+                side_arrow = "📈" if trade.is_long else "📉"
+                created = trade.created_at.strftime("%Y-%m-%d %H:%M")
+                
+                msg += f"{side_arrow} {trade.symbol} {trade.timeframe}\n"
+                msg += f"Entry Trigger: ${trade.mid_price:.6f}\n"
+                msg += f"Negation: ${trade.negation_price:.6f}\n"
+                msg += f"Amount: ${trade.amount_usd}\n"
+                msg += f"Leverage: {trade.leverage}x\n"
+                msg += f"Stop Loss: ${trade.abs_stop_loss_price:.6f}\n"
+                msg += f"Candle SL: {'✅' if trade.use_candle_close_sl else '❌'}\n"
+                msg += f"Created: {created}\n"
+                msg += "-" * 40 + "\n"
+                
+            await self.send_long_message(message.channel, msg)
+            
+        except Exception as e:
+            await message.channel.send(f"❌ Error getting pending trades: {str(e)}")
+
+    async def handle_stoplosses_command(self, message):
+        """$stoplosses - Show active candle-close stop losses"""
+        try:
+            if not self.candle_sl_manager:
+                await message.channel.send("❌ Candle-close stop loss manager not available")
+                return
+                
+            active_stops = dict(self.candle_sl_manager.active_stops)
+            
+            if not active_stops:
+                await message.channel.send("🛡️ No active candle-close stop losses")
+                return
+            
+            msg = f"🛡️ CANDLE-CLOSE STOP LOSSES ({len(active_stops)})\n" + "="*50 + "\n"
+            
+            for order_id, stop_loss in active_stops.items():
+                side_arrow = "📈" if stop_loss.is_long else "📉"
+                created = stop_loss.created_at.strftime("%Y-%m-%d %H:%M")
+                last_checked = "Never"
+                if stop_loss.last_checked_candle:
+                    last_checked = stop_loss.last_checked_candle.strftime("%H:%M")
+                
+                msg += f"{side_arrow} {stop_loss.asset} ({stop_loss.timeframe})\n"
+                msg += f"Stop Level: ${stop_loss.stop_price:.6f}\n"
+                msg += f"Position Size: {stop_loss.position_size:.6f}\n"
+                msg += f"Order ID: {order_id}\n"
+                msg += f"Created: {created}\n"
+                msg += f"Last Checked: {last_checked}\n"
+                msg += "-" * 40 + "\n"
+                
+            # Show monitoring status
+            monitoring_status = "🟢 ACTIVE" if self.candle_sl_manager.monitoring else "🔴 INACTIVE"
+            msg += f"\nMonitoring Status: {monitoring_status}"
+            
+            await self.send_long_message(message.channel, msg)
+            
+        except Exception as e:
+            await message.channel.send(f"❌ Error getting stop losses: {str(e)}")
+
+    async def handle_trade_detail_command(self, message):
+        """$trade <uuid or partial_uuid> - Show detailed trade information"""
+        args = message.content.split(" ")
+        if len(args) != 2:
+            await message.channel.send("❌ Usage: $trade <uuid>")
+            return
+            
+        if not self.hlbot or not hasattr(self.hlbot, 'tracker'):
+            await message.channel.send("❌ Trade tracker not available")
+            return
+        
+        search_uuid = args[1].lower()
+        
+        # Find trade by full or partial UUID
+        found_trade = None
+        for uuid, trade in self.hlbot.tracker.trades.items():
+            if uuid.lower().startswith(search_uuid) or search_uuid in uuid.lower():
+                found_trade = trade
+                break
+        
+        if not found_trade:
+            await message.channel.send(f"❌ Trade not found: {search_uuid}")
+            return
+        
+        # Format detailed trade information
+        side_arrow = "📈" if found_trade["side"] == "long" else "📉"
+        
+        msg = f"🔍 TRADE DETAILS\n" + "="*40 + "\n"
+        msg += f"{side_arrow} {found_trade['currency']} {found_trade['timeframe']} | {found_trade['status'].upper()}\n\n"
+        
+        msg += f"💰 POSITION:\n"
+        msg += f"Entry Price: ${found_trade['entry_price']:.6f}\n"
+        msg += f"Original Size: {found_trade['original_qty_asset']:.6f}\n"
+        msg += f"Current Size: {found_trade['current_qty_asset']:.6f}\n"
+        msg += f"USD Amount: ${found_trade['qty_usd']:.2f}\n"
+        msg += f"Leverage: {found_trade.get('leverage', 'N/A')}x\n\n"
+        
+        msg += f"🎯 TARGETS:\n"
+        msg += f"Stop Loss: ${found_trade['stop_loss_price']:.6f}\n"
+        if found_trade.get('take_profit_1'):
+            msg += f"TP1: ${found_trade['take_profit_1']:.6f}\n"
+        if found_trade.get('take_profit_2'):
+            msg += f"TP2: ${found_trade['take_profit_2']:.6f}\n\n"
+        
+        # Execution details
+        if found_trade.get('execution_details'):
+            msg += f"📊 EXECUTIONS:\n"
+            for detail in found_trade['execution_details'][-5:]:  # Last 5 executions
+                exec_time = detail['timestamp'][:16].replace("T", " ")
+                msg += f"{detail['type']}: {detail['qty']:.6f} @${detail['price']:.6f} ({exec_time})\n"
+            msg += "\n"
+        
+        # P&L information
+        msg += f"💵 P&L:\n"
+        msg += f"Realized: ${found_trade['realized_pnl_usd']:.2f}\n"
+        
+        # Calculate current unrealized if position is active
+        if found_trade['current_qty_asset'] > 0:
+            try:
+                current_price = self.hlbot.get_last_price(found_trade['currency'])
+                if current_price and hasattr(self.hlbot.tracker, 'calculate_current_pnl'):
+                    pnl_data = self.hlbot.tracker.calculate_current_pnl(found_trade['uuid'], current_price)
+                    if pnl_data:
+                        msg += f"Unrealized: ${pnl_data['unrealized_pnl_usd']:.2f}\n"
+                        msg += f"Total: ${pnl_data['total_pnl_usd']:.2f} ({pnl_data['total_pnl_percentage']:.1f}%)\n"
+            except:
+                pass
+        
+        msg += f"\n🕐 TIMESTAMPS:\n"
+        msg += f"Created: {found_trade['created_at'][:19].replace('T', ' ')}\n"
+        msg += f"Updated: {found_trade['updated_at'][:19].replace('T', ' ')}\n"
+        if found_trade.get('closed_at'):
+            msg += f"Closed: {found_trade['closed_at'][:19].replace('T', ' ')}\n"
+        
+        msg += f"\n🆔 IDs:\n"
+        msg += f"UUID: {found_trade['uuid']}\n"
+        msg += f"HL Order ID: {found_trade.get('hyperliquid_order_id', 'N/A')}\n"
+        
+        await self.send_long_message(message.channel, msg)
