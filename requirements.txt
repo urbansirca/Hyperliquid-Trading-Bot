@@ -1,0 +1,10 @@
+hyperliquid-python-sdk
+discord
+discord.py
+ccxt
+requests
+pandas
+numpy
+pandas_ta
+memory-profiler
+flask

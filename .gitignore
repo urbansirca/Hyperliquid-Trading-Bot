@@ -1,0 +1,22 @@
+.venv/
+venv/
+env/
+ENV/
+
+config.json
+.env
+trades.json
+webhook_security.log
+# pycache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+
+*.log
+*.backup
