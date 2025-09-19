@@ -91,6 +91,9 @@ class CommunicationService(discord.Client):
             print(f"Error creating hlbot: {e}")
             return False
 
+    async def send_message(self, message):
+        await self.get_channel(self.config['discord_channel_id']).send("@everyone " + message)
+
     async def on_message(self, message: discord.Message):
         if message.author == self.user:
             return
