@@ -473,25 +473,45 @@ class TradingViewWebhookService:
             # Get the real client IP from headers (for load balancers/proxies)
             client_ip = self.get_real_client_ip(request)
 
+            # Prepare comprehensive request data
+            full_request_data = {
+                "method": request.method,
+                "url": request.url,
+                "headers": dict(request.headers),
+                "args": dict(request.args),
+                "form": dict(request.form),
+                "data": request.get_data(as_text=True),
+                "json": request.get_json(),
+                "remote_addr": request.remote_addr,
+                "user_agent": request.headers.get("User-Agent"),
+                "content_type": request.content_type,
+                "content_length": request.content_length,
+            }
+
             # Check IP allowlist first
             if not self.is_ip_allowed(client_ip):
                 self.log_security_event(
                     "IP not allowed",
                     {"ip": client_ip, "allowed_ips": list(self.allowed_ips)},
                     client_ip,
+                    full_request_data,
                 )
                 return jsonify({"error": "Access denied"}), 403
 
             # Get payload
             payload = request.get_json()
             if not payload:
-                self.log_security_event("Empty payload", request.headers, client_ip)
+                self.log_security_event(
+                    "Empty payload", request.headers, client_ip, full_request_data
+                )
                 return jsonify({"error": "No JSON payload"}), 400
 
             # Check security keyword
             keyword = payload.get("keyword")
             if keyword != self.security_keyword:
-                self.log_security_event("Invalid keyword", payload, client_ip)
+                self.log_security_event(
+                    "Invalid keyword", payload, client_ip, full_request_data
+                )
                 return jsonify({"error": "Unauthorized"}), 401
 
             # Parse and execute alert
@@ -509,16 +529,23 @@ class TradingViewWebhookService:
             self._log_error(f"Webhook handler error: {str(e)}", "handle_webhook")
             return jsonify({"error": "Internal server error"}), 500
 
-    def log_security_event(self, event_type: str, payload: Any, ip_address: str):
-        """Log security events"""
+    def log_security_event(
+        self,
+        event_type: str,
+        payload: Any,
+        ip_address: str,
+        full_request_data: Dict = None,
+    ):
+        """Log security events with complete request information"""
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
             "ip_address": ip_address,
-            "payload": str(payload)[:500],  # Limit payload size in logs
+            "payload": payload,  # Remove the 500 character limit
+            "request_data": full_request_data or {},
         }
 
-        logging.warning(f"SECURITY EVENT: {json.dumps(log_entry)}")
+        logging.warning(f"SECURITY EVENT: {json.dumps(log_entry, indent=2)}")
         print(f"Security Event: {event_type} from {ip_address}")
 
     def parse_and_execute_alert(self, payload: Dict) -> Dict:
