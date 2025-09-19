@@ -67,6 +67,7 @@ class TradingViewWebhookService:
             "54.218.53.128",
             "52.32.178.7",
             "127.0.0.1",
+            "62.195.119.92",  # personal IP
         }
 
         self.webhook = webhook
@@ -442,25 +443,25 @@ class TradingViewWebhookService:
                 f"Failed to execute pending trade: {str(e)}",
                 f"trade_id={pending_trade.id}, symbol={pending_trade.symbol}",
             )
-            
+
     def get_real_client_ip(self, request):
         """Get the real client IP accounting for proxies/load balancers"""
         # Check common forwarded IP headers in order of preference
         forwarded_headers = [
-            'X-Forwarded-For',  # Most common
-            'X-Real-IP',        # Nginx
-            'CF-Connecting-IP', # Cloudflare
-            'X-Client-IP',      # Some proxies
+            "X-Forwarded-For",  # Most common
+            "X-Real-IP",  # Nginx
+            "CF-Connecting-IP",  # Cloudflare
+            "X-Client-IP",  # Some proxies
         ]
-        
+
         for header in forwarded_headers:
             forwarded_ip = request.headers.get(header)
             if forwarded_ip:
                 # X-Forwarded-For can contain multiple IPs, take the first (original client)
-                client_ip = forwarded_ip.split(',')[0].strip()
+                client_ip = forwarded_ip.split(",")[0].strip()
                 print(f"Found client IP in {header}: {client_ip}")
                 return client_ip
-        
+
         # Fallback to remote_addr (direct connection)
         client_ip = request.remote_addr
         print(f"Using remote_addr: {client_ip}")
@@ -471,7 +472,7 @@ class TradingViewWebhookService:
         try:
             # Get the real client IP from headers (for load balancers/proxies)
             client_ip = self.get_real_client_ip(request)
-            
+
             # Check IP allowlist first
             if not self.is_ip_allowed(client_ip):
                 self.log_security_event(
