@@ -695,7 +695,7 @@ class TradingViewWebhookService:
 
             amount_usd = self.hl_service.calculate_dynamic_usd_amount()
             # amount_usd = 10.0  # hardcoded for now # TODO: make this dynamic
-            leverage = 1  # hardcoded for now # TODO: make this dynamic
+            # leverage = 1  # hardcoded for now # TODO: make this dynamic
 
             # Check if we already have 5 or more active trades
             active_trades = self.tracker.get_active_trades()
