@@ -445,29 +445,6 @@ class TradingViewWebhookService:
                 f"trade_id={pending_trade.id}, symbol={pending_trade.symbol}",
             )
 
-    def get_real_client_ip(self, request):
-        """Get the real client IP accounting for proxies/load balancers"""
-        # Check common forwarded IP headers in order of preference
-        forwarded_headers = [
-            "X-Forwarded-For",  # Most common
-            "X-Real-IP",  # Nginx
-            "CF-Connecting-IP",  # Cloudflare
-            "X-Client-IP",  # Some proxies
-        ]
-
-        for header in forwarded_headers:
-            forwarded_ip = request.headers.get(header)
-            if forwarded_ip:
-                # X-Forwarded-For can contain multiple IPs, take the first (original client)
-                client_ip = forwarded_ip.split(",")[0].strip()
-                print(f"Found client IP in {header}: {client_ip}")
-                return client_ip
-
-        # Fallback to remote_addr (direct connection)
-        client_ip = request.remote_addr
-        print(f"Using remote_addr: {client_ip}")
-        return client_ip
-
     def handle_webhook(self):
         """Main webhook handler"""
         try:
@@ -482,7 +459,6 @@ class TradingViewWebhookService:
                 "args": dict(request.args),
                 "form": dict(request.form),
                 "data": request.get_data(as_text=True),
-                "json": request.get_json(),
                 "remote_addr": request.remote_addr,
                 "user_agent": request.headers.get("User-Agent"),
                 "content_type": request.content_type,
@@ -491,6 +467,13 @@ class TradingViewWebhookService:
 
             # Check IP allowlist first
             if not self.is_ip_allowed(client_ip):
+                # Add json attempt to full_request_data for logging
+                try:
+                    full_request_data["json"] = request.get_json()
+                except Exception as json_error:
+                    full_request_data["json_error"] = str(json_error)
+                    full_request_data["json"] = None
+                    
                 self.log_security_event(
                     "IP not allowed",
                     {"ip": client_ip, "allowed_ips": list(self.allowed_ips)},
@@ -499,13 +482,31 @@ class TradingViewWebhookService:
                 )
                 return jsonify({"error": "Access denied"}), 403
 
-            # Get payload
-            payload = request.get_json()
+            # Get payload - handle JSON parsing errors specifically
+            try:
+                payload = request.get_json()
+            except Exception as json_error:
+                # Log the full request details for JSON parsing errors
+                full_request_data["json_error"] = str(json_error)
+                full_request_data["json"] = None
+                
+                self.log_security_event(
+                    "JSON parsing error", 
+                    {"error": str(json_error)}, 
+                    client_ip, 
+                    full_request_data
+                )
+                return jsonify({"error": f"Invalid JSON: {str(json_error)}"}), 400
+                
             if not payload:
+                full_request_data["json"] = None
                 self.log_security_event(
                     "Empty payload", request.headers, client_ip, full_request_data
                 )
                 return jsonify({"error": "No JSON payload"}), 400
+
+            # Add successful JSON parsing to request data
+            full_request_data["json"] = payload
 
             # Check security keyword
             keyword = payload.get("keyword")
@@ -527,9 +528,63 @@ class TradingViewWebhookService:
                 return jsonify({"error": result["error"]}), 400
 
         except Exception as e:
+            # For any other unexpected errors, also log request details
+            try:
+                full_request_data = {
+                    "method": request.method,
+                    "url": request.url,
+                    "headers": dict(request.headers),
+                    "args": dict(request.args),
+                    "form": dict(request.form),
+                    "data": request.get_data(as_text=True),
+                    "remote_addr": request.remote_addr,
+                    "user_agent": request.headers.get("User-Agent"),
+                    "content_type": request.content_type,
+                    "content_length": request.content_length,
+                }
+                # Try to get JSON if possible
+                try:
+                    full_request_data["json"] = request.get_json()
+                except:
+                    full_request_data["json"] = None
+                    
+                client_ip = self.get_real_client_ip(request)
+                
+                self.log_security_event(
+                    "Unexpected webhook error",
+                    {"error": str(e)},
+                    client_ip,
+                    full_request_data
+                )
+            except Exception as log_error:
+                print(f"Failed to log error details: {log_error}")
+                
             self._log_error(f"Webhook handler error: {str(e)}", "handle_webhook")
             return jsonify({"error": "Internal server error"}), 500
 
+    def get_real_client_ip(self, request):
+        """Get the real client IP accounting for proxies/load balancers"""
+        # Check common forwarded IP headers in order of preference
+        # Reordered to prioritize X-Real-IP for your setup
+        forwarded_headers = [
+            "X-Real-IP",  # Nginx - prioritize this for your setup
+            "X-Forwarded-For",  # Most common but may contain proxy IPs
+            "CF-Connecting-IP",  # Cloudflare
+            "X-Client-IP",  # Some proxies
+        ]
+
+        for header in forwarded_headers:
+            forwarded_ip = request.headers.get(header)
+            if forwarded_ip:
+                # X-Forwarded-For can contain multiple IPs, take the first (original client)
+                client_ip = forwarded_ip.split(",")[0].strip()
+                print(f"Found client IP in {header}: {client_ip}")
+                return client_ip
+
+        # Fallback to remote_addr (direct connection)
+        client_ip = request.remote_addr
+        print(f"Using remote_addr: {client_ip}")
+        return client_ip
     def log_security_event(
         self,
         event_type: str,
