@@ -335,13 +335,19 @@ class CandleCloseStopLossManager:
 
                 # Update tracker
                 try:
-                    self.tracker.update_stop_loss_triggered(
-                        trade["uuid"], "candle_close", trigger_price
-                    )
-                    if self.hl_service.webhook:
-                        self.hl_service.webhook.send(
-                            f"🛡️ Candle-close SL executed for {stop_loss.asset}: {reason}"
+                    if trade is None:
+                        self._log_error(
+                            f"Trade not found for order ID {stop_loss.order_id}",
+                            f"asset={stop_loss.asset}",
                         )
+                    else:
+                        self.tracker.update_stop_loss_triggered(
+                            trade["uuid"], "candle_close", trigger_price
+                        )
+                        if self.hl_service.webhook:
+                            self.hl_service.webhook.send(
+                                f"🛡️ Candle-close SL executed for {stop_loss.asset}: {reason}"
+                            )
                 except Exception as e:
                     self._log_error(
                         f"Failed to update tracker after stop loss execution: {str(e)}",

@@ -402,7 +402,7 @@ class TradingViewWebhookService:
                 else:
                     try:
                         self.candle_sl_manager.add_candle_close_stop_loss(
-                            order_id=str(res),
+                            order_id=str(order_id),  # Use order_id, not str(res)
                             asset=pending_trade.symbol,
                             stop_price=pending_trade.negation_price,  # TODO: check if this is correct
                             timeframe=pending_trade.timeframe,
@@ -473,7 +473,7 @@ class TradingViewWebhookService:
                 except Exception as json_error:
                     full_request_data["json_error"] = str(json_error)
                     full_request_data["json"] = None
-                    
+
                 self.log_security_event(
                     "IP not allowed",
                     {"ip": client_ip, "allowed_ips": list(self.allowed_ips)},
@@ -489,15 +489,15 @@ class TradingViewWebhookService:
                 # Log the full request details for JSON parsing errors
                 full_request_data["json_error"] = str(json_error)
                 full_request_data["json"] = None
-                
+
                 self.log_security_event(
-                    "JSON parsing error", 
-                    {"error": str(json_error)}, 
-                    client_ip, 
-                    full_request_data
+                    "JSON parsing error",
+                    {"error": str(json_error)},
+                    client_ip,
+                    full_request_data,
                 )
                 return jsonify({"error": f"Invalid JSON: {str(json_error)}"}), 400
-                
+
             if not payload:
                 full_request_data["json"] = None
                 self.log_security_event(
@@ -547,18 +547,18 @@ class TradingViewWebhookService:
                     full_request_data["json"] = request.get_json()
                 except:
                     full_request_data["json"] = None
-                    
+
                 client_ip = self.get_real_client_ip(request)
-                
+
                 self.log_security_event(
                     "Unexpected webhook error",
                     {"error": str(e)},
                     client_ip,
-                    full_request_data
+                    full_request_data,
                 )
             except Exception as log_error:
                 print(f"Failed to log error details: {log_error}")
-                
+
             self._log_error(f"Webhook handler error: {str(e)}", "handle_webhook")
             return jsonify({"error": "Internal server error"}), 500
 
@@ -585,6 +585,7 @@ class TradingViewWebhookService:
         client_ip = request.remote_addr
         print(f"Using remote_addr: {client_ip}")
         return client_ip
+
     def log_security_event(
         self,
         event_type: str,
@@ -629,15 +630,22 @@ class TradingViewWebhookService:
             tv_candle_high = payload.get("candle_high", None)  # candle high
             tv_candle_low = payload.get("candle_low", None)  # candle low
 
-            # tv_info = {
-            #     "ticker": tv_ticker,
-            #     "time": tv_time,
-            #     "timenow": tv_timenow,
-            #     "candle_open": tv_candle_open,
-            #     "candle_close": tv_candle_close,
-            #     "candle_high": tv_candle_high,
-            #     "candle_low": tv_candle_low,
-            # }
+            tv_info = {
+                "action": alert_type,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "amount": amount_usd,
+                "leverage": leverage,
+                "ticker": tv_ticker,
+                "time": tv_time,
+                "timenow": tv_timenow,
+                "candle_open": tv_candle_open,
+                "candle_close": tv_candle_close,
+                "candle_high": tv_candle_high,
+                "candle_low": tv_candle_low,
+            }
+            # send the entire payload to the webhook
+            self.webhook.send(f"TV Payload: {tv_info}")
 
             # Validate required fields
             if not all([alert_type, symbol, timeframe]):

@@ -52,7 +52,7 @@ class HyperLiquidExecutionService:
             try:
                 symbol = rawAssetName.upper() + "/USDT:USDT"
                 r = self.ex.fetch_ticker(symbol)
-                print(f"Getting last price for {symbol} at price {r['last']}")
+                # print(f"Getting last price for {symbol} at price {r['last']}")
 
                 return r["last"]
             except Exception as e:
