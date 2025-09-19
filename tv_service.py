@@ -86,7 +86,7 @@ class TradingViewWebhookService:
 
         # Setup logging
         logging.basicConfig(
-            filename=sys.stdout,
+            # filename="webhook_security.log",
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
         )
