@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, asdict, field
 from execution_service import HyperLiquidExecutionService
 from candle_service import CandleCloseStopLossManager
+import sys
 
 import ccxt
 from tracker import TradeTracker
@@ -85,7 +86,7 @@ class TradingViewWebhookService:
 
         # Setup logging
         logging.basicConfig(
-            filename=log_file,
+            filename=sys.stdout,
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
         )
@@ -547,6 +548,10 @@ class TradingViewWebhookService:
 
         logging.warning(f"SECURITY EVENT: {json.dumps(log_entry, indent=2)}")
         print(f"Security Event: {event_type} from {ip_address}")
+        self._log_error(
+            error_msg=f"Security Event: {event_type} from {ip_address} with payload {payload} and request data {full_request_data}",
+            context="log_security_event",
+        )
 
     def parse_and_execute_alert(self, payload: Dict) -> Dict:
         """Parse TradingView alert and execute trade"""
